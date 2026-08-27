@@ -7,23 +7,19 @@ import "./libraries/UTCDateTime.sol";
 import "./interfaces/ICCLP.sol";
 import "./interfaces/ICCAllowed.sol";
 
-
 contract CCLedger is Initializable, AdminRoleUpgrade {
 
     mapping(address => uint256) public reCashBalance;
 
     mapping(address => uint256) public cashBalance;
 
-
     mapping(address => bool) public isMinter;
 
     mapping(address => bool) public isSpender;
 
-
     ICCLP public lp;
 
     ICCAllowed public allowed;
-
 
     uint256 public autoExchangePerTx;
 
@@ -33,10 +29,12 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
 
     mapping(address => uint256) public autoExchangeDayOf;
 
-
     mapping(address => uint256) public exchangedCashTotal;
 
     mapping(address => uint256) public exchangedCccTotal;
+
+     uint256 public dailySellLimit;
+    mapping(uint256 => uint256) public dailySoldAmount;
 
     error ErrorInsufficientReCash();
     error ErrorInsufficientCash();
@@ -47,6 +45,7 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
     error ErrorExceedPerDay();
     error ErrorZeroAddress();
     error ErrorUnauthorized();
+    error ErrorDailySellLimitExceeded();
 
     event ReCashAmountLog(
         address indexed addr,
@@ -63,7 +62,6 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         bool isAdd,
         address indexed from
     );
-
 
     event CashToCCCLog(
         address indexed addr,
@@ -85,19 +83,19 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         lp = ICCLP(lp_);
         allowed = ICCAllowed(allowed_);
     }
-
+    function setDailySellLimit(uint256 limit) external onlyAdminOrSpender {
+        dailySellLimit = limit;
+    }
 
     function setSpender(address account, bool status) external onlyAdmin {
         isSpender[account] = status;
     }
-
 
     function setAutoExchangeLimit(uint256 perTx, uint256 perDay) external onlyAdminOrSpender {
         require(perTx == 0 || perDay == 0 || perTx <= perDay);
         autoExchangePerTx = perTx;
         autoExchangePerDay = perDay;
     }
-
 
     function stake(address user, uint256 reCashAmount, uint256 cashAmount) external onlyAdmin {
         if (reCashAmount > 0) {
@@ -109,7 +107,6 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
             getCashEventLog(user, 2, cashAmount, true, msg.sender);
         }
     }
-
 
     function mint(address user, uint256 reCashAmount, uint256 cashAmount) external onlyAdmin {
         if (reCashAmount > 0) {
@@ -127,7 +124,6 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         getCashEventLog(user, status, cashAmount, true, from);
     }
 
-
     function spend(address user, uint256 reCashAmount, uint256 cashAmount) external onlyAdmin {
         if (reCashAmount > 0) {
             if (reCashBalance[user] < reCashAmount) revert ErrorInsufficientReCash();
@@ -141,7 +137,6 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         }
     }
 
-
     function cashToCCC(uint256 amount) external {
         if (autoExchangePerTx > 0 && amount > autoExchangePerTx) revert ErrorExceedPerTx();
         if (autoExchangePerDay > 0 && _usedToday(msg.sender) + amount > autoExchangePerDay) {
@@ -151,23 +146,19 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         _accrueAutoExchange(msg.sender, amount);
     }
 
-
     function cashToCCCByAdmin(address user, uint256 amount) external onlyAdminOrSpender {
         if (user == address(0)) revert ErrorZeroAddress();
         _cashToCCC(user, amount);
         _accrueAutoExchange(user, amount);
     }
 
-
     function exchangeFeeBps(address user) external view returns (uint256) {
         return lp.exchangeFeeBps(user);
     }
 
-
     function exchangeFeeRate(address user) external view returns (uint256 feeBps, uint8 tier) {
         return lp.exchangeFeeRate(user);
     }
-
 
     function previewCashToCCC(address user, uint256 amount)
         external
@@ -177,11 +168,9 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         return lp.previewCashToCCC(user, amount);
     }
 
-
     function quoteCashToCcc(uint256 cashAmount) external view returns (uint256) {
         return lp.quoteCashToCcc(cashAmount);
     }
-
 
     function autoExchangeQuota(address user)
         external
@@ -200,11 +189,9 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         }
     }
 
-
     function balanceOf(address user) external view returns (uint256 reCash, uint256 cash) {
         return (reCashBalance[user], cashBalance[user]);
     }
-
 
     function balanceOfBatch(address[] calldata users)
         external
@@ -228,20 +215,25 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
     }
 
     function _cashToCCC(address user, uint256 amount) internal {
+        require(false, "not open");
         if (amount == 0) revert ErrorZeroAmount();
         if (address(allowed) != address(0) && allowed.isLimited(user)) revert ErrorLimited();
         if (cashBalance[user] < amount) revert ErrorInsufficientCash();
         if (address(lp) == address(0)) revert ErrorLpNotSet();
-
 
         (uint256 cccNet, uint256 feeAmount) = lp.exchange(user, amount);
         cashBalance[user] -= amount;
 
         exchangedCashTotal[user] += amount;
         exchangedCccTotal[user] += cccNet;
-
+        _accrueDailySell(cccNet);
         getCashEventLog(user, 3, amount, false, msg.sender);
         emit CashToCCCLog(user, amount, feeAmount, cccNet);
+    }
+
+    function _accrueDailySell(uint256 amount) internal {
+        if(dailySoldAmount[today] + amount > dailySellLimit) revert ErrorDailySellLimitExceeded();
+        dailySoldAmount[today] += amount;
     }
 
     function _accrueAutoExchange(address user, uint256 amount) internal {
@@ -259,12 +251,10 @@ contract CCLedger is Initializable, AdminRoleUpgrade {
         return autoExchangedOf[user];
     }
 
-
     function getReCashEventLog(address addr, uint256 status, uint256 amount, bool isAdd, address from) internal {
 
         emit ReCashAmountLog(addr, status, amount, isAdd, from);
     }
-
 
     function getCashEventLog(address addr, uint256 status, uint256 amount, bool isAdd, address from) internal {
 

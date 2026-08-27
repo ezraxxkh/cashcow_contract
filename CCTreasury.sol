@@ -5,10 +5,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./AdminRoleUpgrade.sol";
 
-
 contract CCTreasury is Initializable, AdminRoleUpgrade {
     using SafeERC20 for IERC20;
-
 
     IERC20 public paymentToken;
 
@@ -21,7 +19,6 @@ contract CCTreasury is Initializable, AdminRoleUpgrade {
     mapping(address => bool) public isSpender;
 
     error ErrorUnauthorized();
-
 
     event CccPaid(address indexed to, uint256 amount);
     event SpenderUpdated(address indexed account, bool status);
@@ -47,12 +44,10 @@ contract CCTreasury is Initializable, AdminRoleUpgrade {
         lp = lp_;
     }
 
-
     function setSpender(address account, bool status) external onlyAdmin {
         isSpender[account] = status;
         emit SpenderUpdated(account, status);
     }
-
 
     function payCcc(address to, uint256 amount) external onlySpender {
         ccc.safeTransfer(to, amount);

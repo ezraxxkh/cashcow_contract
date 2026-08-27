@@ -8,7 +8,6 @@ interface ICCLP {
     function exchangeFeeRate(address user) external view returns (uint256 feeBps, uint8 tier);
 }
 
-
 contract CCConfigQuery is Initializable, AdminRoleUpgrade {
 
     ICCLP public lp;
@@ -21,11 +20,9 @@ contract CCConfigQuery is Initializable, AdminRoleUpgrade {
         lp = ICCLP(lp_);
     }
 
-
     function exchangeFeeBps(address user) external view returns (uint256) {
         return lp.exchangeFeeBps(user);
     }
-
 
     function exchangeFeeRate(address user) external view returns (uint256 feeBps, uint8 tier) {
         return lp.exchangeFeeRate(user);

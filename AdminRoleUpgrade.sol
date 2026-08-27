@@ -9,7 +9,6 @@ contract AdminRoleUpgrade {
     event AdminAdded(address indexed account);
     event AdminRemoved(address indexed account);
 
-
     modifier onlyAdmin() {
         require(
             isAdmin(msg.sender),

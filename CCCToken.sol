@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -29,15 +28,12 @@ interface IUniswapV2Factory {
 contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
     address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
-    bytes32 public constant TOKEN_MANAGER = keccak256("TOKEN_MANAGER");
     bytes32 public constant GOVERNOR_ROLE = keccak256("GOVERNOR_ROLE");
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
-    
+
     address public constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
     address public constant ROUTER_V2 = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
     address public constant BNB_USDT_POOL = 0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE;
-
-    uint256 internal constant PAIR_LIQ_DETECT_MIN = 1e13;
 
     uint256 public constant BPS = 10000;
     uint256 public constant ANTI_DUMP_BURN_BPS = 2500;
@@ -56,6 +52,9 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
     uint256 public feeDown;
     uint256 public feeBuy;
     uint256 public feeSell;
+    bool public freeTradingEnabled;
+
+    bool public burnEnabled;
 
     address public coBuilderReceiver;
     address public communityReceiver;
@@ -69,7 +68,6 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         address quoteToken;
         uint32 lastDay;
         uint40 antiDumpActivatedAt;
-        uint256 liqDetectMin;
         uint256 referencePrice;
     }
 
@@ -111,19 +109,28 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
     error ErrorPairDisabled();
     error ErrorPairNotRegistered();
     error ErrorPairAlreadyRegistered();
+    error ErrorBurnDisabled();
 
     constructor() ERC20("CashCowCoin", "CCC") ERC20Permit("CashCowCoin") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(TOKEN_MANAGER, msg.sender);
         _grantRole(GOVERNOR_ROLE, msg.sender);
         _grantRole(GUARDIAN_ROLE, msg.sender);
 
-        _mint(0x8cE4A999cc91f4F60a14f06FD0be057A28b5BE91, 210_000_000e18);
+        _mint(0x45391271372d8011A21e7C2cC991C4A491BB9643, 168_000_000e18);
+        _mint(0x4BEFAFe12617E8c88D4F0a8E58035cd6CaE76bC1, 21_000_000e18);
+        _mint(0x5ce95Ea6DaB093e08cc62A7C08242B2eB301DBd1, 10_500_000e18);
+        _mint(0x4444C1C876DDEa4afD4eC8c2f3cb3f723DEF8c2E, 10_500_000e18);
 
+        isExcluded[0x45391271372d8011A21e7C2cC991C4A491BB9643] = true;
+        isExcluded[0x4BEFAFe12617E8c88D4F0a8E58035cd6CaE76bC1] = true;
+        isExcluded[0x5ce95Ea6DaB093e08cc62A7C08242B2eB301DBd1] = true;
+        isExcluded[0x4444C1C876DDEa4afD4eC8c2f3cb3f723DEF8c2E] = true;
+        isExcluded[0xae48015BBCAd9B5DE945a2423Aee0D2c434a795d] = true;
         address factory = IUniswapV2Router(ROUTER_V2).factory();
         address pair = IUniswapV2Factory(factory).createPair(address(this), WBNB);
         _registerPair(pair);
         mainPair = pair;
+
     }
 
     function pause() external onlyRole(GUARDIAN_ROLE) {
@@ -170,6 +177,14 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         lpPoolMaxUsdtValue = lpPoolMaxUsdtValue_;
     }
 
+    function setFreeTradingEnabled(bool enabled) external onlyRole(GOVERNOR_ROLE) {
+        freeTradingEnabled = enabled;
+    }
+
+    function setBurnEnabled(bool enabled) external onlyRole(GOVERNOR_ROLE) {
+        burnEnabled = enabled;
+    }
+
     function registerPair(address pair) external onlyRole(GOVERNOR_ROLE) {
         _registerPair(pair);
     }
@@ -189,7 +204,6 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         info.enabled = true;
         info.cccIsToken0 = cccIsToken0_;
         info.quoteToken = quoteToken;
-        info.liqDetectMin = PAIR_LIQ_DETECT_MIN;
         pairList.push(pair);
     }
 
@@ -198,18 +212,13 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         pairs[pair].enabled = enabled;
     }
 
-    function setPairLiqDetectMin(address pair, uint256 amount) external onlyRole(GOVERNOR_ROLE) {
-        if (!isPair[pair]) revert ErrorPairNotRegistered();
-        pairs[pair].liqDetectMin = amount;
-    }
-
     function setMainPair(address pair) external onlyRole(GOVERNOR_ROLE) {
         if (!isPair[pair]) revert ErrorPairNotRegistered();
         require(pairs[pair].quoteToken == WBNB, "pair missing wbnb");
         mainPair = pair;
     }
 
-    function setTreasury(address account) external onlyRole(TOKEN_MANAGER) {
+    function setTreasury(address account) external onlyRole(GOVERNOR_ROLE) {
         if (account == address(0)) revert ErrorAddressZero();
         treasury = account;
     }
@@ -219,14 +228,14 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         tradingWhitelist[account] = enabled;
     }
 
-    function setCcSwap(address account) external onlyRole(TOKEN_MANAGER) {
+    function setCcSwap(address account) external onlyRole(GOVERNOR_ROLE) {
         if (account == address(0)) revert ErrorAddressZero();
         ccSwap = account;
         isCcSwap[account] = true;
         tradingWhitelist[account] = true;
     }
 
-    function setCcSwapModule(address account, bool enabled) external onlyRole(TOKEN_MANAGER) {
+    function setCcSwapModule(address account, bool enabled) external onlyRole(GOVERNOR_ROLE) {
         if (account == address(0)) revert ErrorAddressZero();
         isCcSwap[account] = enabled;
         tradingWhitelist[account] = enabled;
@@ -246,6 +255,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         if (to != treasury && to != DEAD_ADDRESS) revert ErrorInvalidTreasury();
         if (treasury == address(0) && to != DEAD_ADDRESS) revert ErrorTreasuryNotSet();
         if (amount == 0) revert ErrorAddressZero();
+        if (to == DEAD_ADDRESS && !isBurnAllowed()) revert ErrorBurnDisabled();
 
         uint256 pairBal = balanceOf(pair);
         if (pairBal < amount) revert ErrorInsufficientPoolBalance();
@@ -267,14 +277,19 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         return (bnbPrice * bnbInUsdt) / 1e18;
     }
 
-    function getMainPairUsdtValue() public view returns (uint256) {
+    function getMainPairSingleSideUsdtValue() public view returns (uint256) {
         uint256 reserveWbnb = _reserveQuote(mainPair, pairs[mainPair].cccIsToken0);
         uint256 bnbInUsdt = _getPairPrice(BNB_USDT_POOL, WBNB, 1e18);
-        return (reserveWbnb * bnbInUsdt * 2) / 1e18;
+        return (reserveWbnb * bnbInUsdt) / 1e18;
     }
 
     function isLpPoolAboveBuyThreshold() public view returns (bool) {
-        return getMainPairUsdtValue() > lpPoolMaxUsdtValue;
+        return getMainPairSingleSideUsdtValue() > lpPoolMaxUsdtValue;
+    }
+
+    function isBurnAllowed() public view returns (bool) {
+
+        return burnEnabled || getMainPairSingleSideUsdtValue() < lpPoolMaxUsdtValue;
     }
 
     function getPairPriceInQuote(address pair) public view returns (uint256) {
@@ -403,30 +418,6 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         return amount - burnAmount - feeAmount;
     }
 
-    function _isAddLiquidity(address to) internal view returns (bool) {
-        if (!isPair[to]) {
-            return false;
-        }
-        PairInfo storage info = pairs[to];
-        uint256 reserveQuote = _reserveQuote(to, info.cccIsToken0);
-        uint256 quoteBal = IERC20(info.quoteToken).balanceOf(to);
-        return quoteBal >= reserveQuote + info.liqDetectMin;
-    }
-
-    function _isRemoveLiquidity(address from) internal view returns (bool) {
-        if (!isPair[from]) {
-            return false;
-        }
-        PairInfo storage info = pairs[from];
-        uint256 reserveQuote = _reserveQuote(from, info.cccIsToken0);
-        uint256 quoteBal = IERC20(info.quoteToken).balanceOf(from);
-
-        if (info.cccIsToken0) {
-            return quoteBal <= reserveQuote + info.liqDetectMin;
-        }
-        return reserveQuote >= quoteBal + info.liqDetectMin;
-    }
-
     function _reserveQuote(address pair, bool cccIsToken0_) internal view returns (uint256) {
         (uint112 r0, uint112 r1, ) = IUniswapV2Pair(pair).getReserves();
         return cccIsToken0_ ? uint256(r1) : uint256(r0);
@@ -510,11 +501,6 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
             }
         }
 
-        if (_isAddLiquidity(to) || _isRemoveLiquidity(from)) {
-            super._transfer(from, to, amount);
-            return;
-        }
-
         address other = pair == from ? to : from;
         require(tradingWhitelist[other], "not trading whitelist");
 
@@ -522,6 +508,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
 
         if (buyTx) {
             if (pair == mainPair) {
+                require(freeTradingEnabled, "free trading disabled");
                 require(isLpPoolAboveBuyThreshold(), "lp pool below buy threshold");
             }
             uint256 feeAmount = _calcTradingFee(amount, true);
