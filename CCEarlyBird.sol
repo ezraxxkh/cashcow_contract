@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -12,8 +13,10 @@ import "./interfaces/INonfungiblePositionManager.sol";
 import "./interfaces/IUniswapV3Pool.sol";
 import "./libraries/V3PositionMath.sol";
 
+
 contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
     using SafeERC20 for IERC20;
+
 
     enum Tier {
         B1,
@@ -23,6 +26,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         B5
     }
 
+
     struct TierConfig {
         uint256 price;
         uint256 maxSupply;
@@ -31,7 +35,9 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint16 recashBonusRate;
     }
 
+
     IERC20 public paymentToken;
+
 
     mapping(Tier => TierConfig) public tiers;
 
@@ -39,9 +45,11 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
 
     mapping(address => Tier) public purchaserTier;
 
+
     IRelation public relation;
 
     ILedger public ledger;
+
 
     INonfungiblePositionManager internal constant POSITION_MANAGER =
         INonfungiblePositionManager(0x46A15B0b27311cedF172AB29E4f4766fbE7F4364);
@@ -96,6 +104,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
 
     uint256 internal constant DEADLINE_BUFFER = 1 hours;
 
+
     event EarlyBirdPurchased(
         address indexed buyer,
         Tier indexed tier,
@@ -105,9 +114,12 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint256 slotIndex
     );
 
+
     event RecashBonusRateSet(Tier indexed tier, uint16 rate);
 
+
     event MaxSupplySet(Tier indexed tier, uint256 maxSupply);
+
 
     event LiquidityAdded(
         uint256 indexed tokenId,
@@ -116,6 +128,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         bool isNewPosition
     );
 
+
     event LiquidityRemoved(
         uint256 indexed tokenId,
         uint128 liquidityRemoved,
@@ -123,16 +136,19 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint256 amount1
     );
 
+
     event ReferralRewardAccrued(
         address indexed buyer,
         address indexed referrer,
         uint256 amount
     );
 
+
     event ReferralRewardClaimed(
         address indexed referrer,
         uint256 amount
     );
+
 
     event AdminLiquidityRemoved(
         address indexed admin,
@@ -141,7 +157,9 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint256 amount1
     );
 
+
     event PurchaseStartTimeSet(uint256 purchaseStartTime);
+
 
     event WhitelistSet(address indexed account, bool enabled);
 
@@ -166,24 +184,29 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         ledger = ILedger(ledger_);
     }
 
+
     function setLiquidityPool(address liquidityPool_) external onlyAdmin {
         liquidityPool = liquidityPool_;
     }
 
+
     function setCcSwap(address ccSwap_) external onlyAdmin {
         ccSwap = ICCSwap(ccSwap_);
     }
+
 
     function setRecashBonusRate(Tier tier, uint16 rate) external onlyAdmin {
         tiers[tier].recashBonusRate = rate;
         emit RecashBonusRateSet(tier, rate);
     }
 
+
     function setMaxSupply(Tier tier, uint256 maxSupply) external onlyAdmin {
         if (maxSupply < tiers[tier].sold) revert ErrorMaxSupplyBelowSold();
         tiers[tier].maxSupply = maxSupply;
         emit MaxSupplySet(tier, maxSupply);
     }
+
 
     function batchSetRecashBonusRate(Tier[] calldata tierList, uint16[] calldata rates) external  onlyAdmin{
         uint256 length = tierList.length;
@@ -197,15 +220,18 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         }
     }
 
+
     function setPurchaseStartTime(uint256 purchaseStartTime_) external onlyAdmin {
         purchaseStartTime = purchaseStartTime_;
 
     }
 
+
     function setWhitelist(address account, bool enabled) external onlyAdmin {
         whitelist[account] = enabled;
 
     }
+
 
     function batchSetWhitelist(address[] calldata accounts, bool[] calldata enabled) external onlyAdmin {
         uint256 length = accounts.length;
@@ -219,10 +245,12 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         }
     }
 
+
     function previewRecashAmount(Tier tier) external view returns (uint256) {
         TierConfig storage config = tiers[tier];
         return _calcRecashAmount(config.price, config.recashBonusRate);
     }
+
 
     function buy(Tier tier) external {
         require(false, "not open");
@@ -238,6 +266,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
 
         uint256 spent = _totalPurchasedAmount(msg.sender);
         if (spent + config.price > MAX_PURCHASE_AMOUNT) revert ErrorExceedMaxPurchase();
+
 
         if (purchaseTime[msg.sender] != 0 && purchasedTiers[msg.sender].length == 0) {
             Tier legacyTier = purchaserTier[msg.sender];
@@ -270,6 +299,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint256 recashAmount = _calcRecashAmount(config.price, config.recashBonusRate);
         ledger.mint(msg.sender, recashAmount, 0);
 
+
         ccSwap.addUserBuyUSDT(msg.sender, config.price);
 
         emit EarlyBirdPurchased(
@@ -281,6 +311,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
             config.sold
         );
     }
+
 
     function buyByAdmin(address[] calldata accounts, Tier[] calldata tierList) external onlyAdmin {
 
@@ -303,6 +334,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint256 spent = _totalPurchasedAmount(account);
         if (spent + config.price > MAX_PURCHASE_AMOUNT) revert ErrorExceedMaxPurchase();
 
+
         if (purchaseTime[account] != 0 && purchasedTiers[account].length == 0) {
             Tier legacyTier = purchaserTier[account];
             purchasedTiers[account].push(legacyTier);
@@ -322,6 +354,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         uint256 recashAmount = _calcRecashAmount(config.price, config.recashBonusRate);
         ledger.mint(account, recashAmount, 0);
 
+
         ccSwap.addUserBuyUSDT(account, config.price);
 
         emit EarlyBirdPurchased(
@@ -333,6 +366,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
             config.sold
         );
     }
+
 
     function claimReferralReward() external {
         uint256 amount = pendingReferralRewards[msg.sender];
@@ -347,6 +381,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         emit ReferralRewardClaimed(msg.sender, amount);
     }
 
+
     function removeLiquidity(uint256 amount) external onlyAdmin {
         uint256 removeAmount = amount + LIQUIDITY_REMOVE_BUFFER;
         (uint256 amount0, uint256 amount1) = _removeV3LiquidityForPaymentToken(removeAmount);
@@ -356,6 +391,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
 
         emit AdminLiquidityRemoved(msg.sender, amount, amount0, amount1);
     }
+
 
     function getPositionAmounts() external view returns (uint256 amount0, uint256 amount1) {
         if (positionTokenId == 0) return (0, 0);
@@ -417,9 +453,11 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         );
     }
 
+
     function _calcRecashAmount(uint256 price, uint16 recashBonusRate) internal pure returns (uint256) {
         return price * (BONUS_DENOMINATOR + uint256(recashBonusRate)) / BONUS_DENOMINATOR;
     }
+
 
     function _ownsTier(address account, Tier tier) internal view returns (bool) {
         if (account == EXTRA_B4_BUYER && tier == Tier.B4) {
@@ -438,6 +476,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         }
         return purchaseTime[account] != 0 && purchaserTier[account] == tier;
     }
+
 
     function _tierCount(address account, Tier tier) internal view returns (uint256 count) {
         Tier[] storage list = purchasedTiers[account];
@@ -461,6 +500,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         return 0;
     }
 
+
     function _totalPurchasedAmount(address account) internal view returns (uint256 total) {
         Tier[] storage list = purchasedTiers[account];
         uint256 length = list.length;
@@ -479,6 +519,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         return 0;
     }
 
+
     function _findReferralRecipient(address buyer) internal view returns (address) {
         address upline = relation.Inviter(buyer);
         while (upline != address(0) && upline != RELATION_ROOT) {
@@ -490,6 +531,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         return address(0);
     }
 
+
     function _tierPurchaseTime(address account, Tier tier) internal view returns (uint256) {
         uint256 t = tierPurchaseTime[account][tier];
         if (t != 0) return t;
@@ -498,6 +540,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         }
         return 0;
     }
+
 
     function _removeV3LiquidityForPaymentToken(uint256 paymentAmount)
         internal
@@ -582,6 +625,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         emit LiquidityRemoved(positionTokenId, liquidityToRemove, amount0, amount1);
     }
 
+
     function _addV3Liquidity(uint256 amount) internal {
         if (liquidityPool == address(0)) revert ErrorLiquidityPoolNotSet();
         if (amount == 0) return;
@@ -624,6 +668,7 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         }
     }
 
+
     function onERC721Received(
         address,
         address,
@@ -633,11 +678,13 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         return IERC721Receiver.onERC721Received.selector;
     }
 
+
     function getPurchaseInfo(address account) external view returns (bool purchased, uint256 purchasedAt, Tier tier) {
         purchased = _totalPurchasedAmount(account) > 0;
         purchasedAt = purchaseTime[account];
         tier = purchaserTier[account];
     }
+
 
     function getPurchasedTiers(address account)
         external
@@ -669,17 +716,21 @@ contract CCEarlyBird is Initializable, AdminRoleUpgrade, IERC721Receiver {
         return (new Tier[](0), new uint256[](0));
     }
 
+
     function getTierPurchaseTime(address account, Tier tier) external view returns (uint256) {
         return _tierPurchaseTime(account, tier);
     }
+
 
     function getTotalPurchasedAmount(address account) external view returns (uint256) {
         return _totalPurchasedAmount(account);
     }
 
+
     function ownsTier(address account, Tier tier) external view returns (bool) {
         return _ownsTier(account, tier);
     }
+
 
     function canPurchase(address account) external view returns (bool) {
         if (block.timestamp >= PURCHASE_END_TIME) return false;

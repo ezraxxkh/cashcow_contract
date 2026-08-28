@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -17,11 +18,13 @@ interface IUniswapV2Factory {
     function createPair(address tokenA, address tokenB) external returns (address pair);
 }
 
+
 contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     using SafeERC20 for IERC20;
 
     uint256 internal constant BPS = 10_000;
     address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
 
     uint256 public constant PROFIT_BURN_BPS = 500;
     uint256 public constant PROFIT_COBUILDER_BPS = 400;
@@ -29,11 +32,13 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     uint256 public constant PROFIT_OPS_BPS = 400;
     uint256 public constant PROFIT_NODE_BPS = 300;
 
+
     enum QuoteRoute {
         Direct,
         ViaPool,
         ViaWbnb
     }
+
 
     IERC20 public ccc;
     IPancakeRouter02 public router;
@@ -55,10 +60,12 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     bool private _locked;
 
+
     address public coBuilderReceiver;
     address public communityReceiver;
     address public opsReceiver;
     address public nodeReceiver;
+
 
     mapping(address => uint256) public userBuyBNBAmount;
 
@@ -67,6 +74,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     mapping(address => uint256) public userSellCCCAmount;
 
     mapping(address => uint256) public userSellBNBAmount;
+
 
     struct Channel {
         bool enabled;
@@ -87,6 +95,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     mapping(address => mapping(address => uint256)) public userSellQuoteAmount;
 
+
     mapping(address => uint256) public dailySellLimit;
 
     mapping(address => mapping(uint256 => uint256)) public dailySoldAmount;
@@ -95,6 +104,15 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     bool public isDailyPriceGuardEnabled;
 
     mapping(address => mapping(uint256 => uint256)) public dailyHighestCccPrice;
+
+
+    uint256 public dailySellCountLimit;
+
+    mapping(address => mapping(uint256 => uint256)) public userDailySellCount;
+
+    mapping(address => uint256) public userDailySellLimit;
+
+    mapping(address => mapping(address => mapping(uint256 => uint256))) public userDailySoldAmount;
 
     error ErrorZeroAmount();
     error ErrorZeroAddress();
@@ -112,6 +130,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     error ErrorInvalidPairPrice(address pair);
     error ErrorDailyPriceDropExceeded(address pair, uint256 price, uint256 highestPrice);
 
+
     event Bought(address indexed user, uint256 bnbIn, uint256 cccOut, uint256 usdtCost);
 
     event Sold(address indexed user, uint256 cccIn, uint256 bnbOut, uint256 burnedFromPair);
@@ -122,6 +141,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     event UserBuyUSDTAdded(address indexed user, uint256 addedAmount, uint256 totalAmount);
 
+
     event UserBuyUSDTReduced(address indexed user, uint256 reducedAmount, uint256 totalAmount);
 
     event ProfitTaxCharged(address indexed user, uint256 profitAmount, uint256 taxAmount);
@@ -130,7 +150,9 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     event ProfitTaxBpsUpdated(uint256 bps);
 
+
     event DailySoldAccrued(address indexed quoteToken, uint256 indexed day, uint256 amount, uint256 total);
+
 
     modifier nonReentrant() {
         if (_locked) revert ErrorReentrancy();
@@ -151,6 +173,22 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     function setSpender(address spender, bool isSpender_) external onlyAdmin {
         isSpender[spender] = isSpender_;
+    }
+
+    function createPairs()
+        external
+        onlyAdmin
+        returns (address pair1, address pair2)
+    {
+        address factory = router.factory();
+        pair1 = IUniswapV2Factory(factory).createPair(
+            0xCbd8Bb97b9FC45D548a66e513cd5b2649BD14CCC,
+            0x6BC3855827fa6EE1229C937A26BB9fCA1a0FfBf0
+        );
+        pair2 = IUniswapV2Factory(factory).createPair(
+            0xCbd8Bb97b9FC45D548a66e513cd5b2649BD14CCC,
+            0x61a10E8556BEd032eA176330e7F17D6a12a10000
+        );
     }
 
     function setAboutAddress(
@@ -188,9 +226,11 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
         ccc.forceApprove(router_, type(uint256).max);
 
+
     }
 
     receive() external payable {}
+
 
     function registerChannel(address quoteToken, address pair) external onlyAdmin {
         _registerChannel(quoteToken, pair);
@@ -232,9 +272,11 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     }
 
+
     function registerNativeChannel() external onlyAdmin {
         _registerChannel(wbnb, ICCCToken(address(ccc)).mainPair());
     }
+
 
     function setChannelEnabled(address quoteToken, bool enabled) external onlyAdmin {
         Channel storage ch = _channels[quoteToken];
@@ -252,9 +294,11 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         swapFeeBps = bps;
     }
 
+
     function setDailyPriceGuardEnabled(bool enabled) external onlyAdmin {
         isDailyPriceGuardEnabled = enabled;
     }
+
 
     function setDailySellLimits(address[] calldata quoteTokens, uint256[] calldata limits) external onlySpender {
         if (quoteTokens.length != limits.length) revert ErrorArrayLengthMismatch();
@@ -262,6 +306,20 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
             if (quoteTokens[i] == address(0)) revert ErrorZeroAddress();
             dailySellLimit[quoteTokens[i]] = limits[i];
         }
+    }
+
+
+    function setUserDailySellLimits(address[] calldata quoteTokens, uint256[] calldata limits) external onlySpender {
+        if (quoteTokens.length != limits.length) revert ErrorArrayLengthMismatch();
+        for (uint256 i = 0; i < quoteTokens.length; i++) {
+            if (quoteTokens[i] == address(0)) revert ErrorZeroAddress();
+            userDailySellLimit[quoteTokens[i]] = limits[i];
+        }
+    }
+
+
+    function setDailySellCountLimit(uint256 limit) external onlySpender {
+        dailySellCountLimit = limit;
     }
 
     function setLpModule(address account) external onlyAdmin {
@@ -290,10 +348,12 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
 
     }
 
+
     function addUserBuyUSDT(address user, uint256 usdtAmount) external onlyAdmin {
 
         _addUserBuyUSDT(user, usdtAmount);
     }
+
 
     function batchAddUserBuyUSDT(address[] calldata users, uint256[] calldata amounts) external onlyAdmin {
         uint256 length = users.length;
@@ -306,46 +366,18 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         }
     }
 
+
     function withdrawFromPair(address to, uint256 amount) external {
         if (msg.sender != lpModule) revert ErrorUnauthorized();
         ICCCToken(address(ccc)).withdrawFromPair(to, amount);
     }
+
 
     function withdrawFromPairAt(address pair, address to, uint256 amount) external {
         if (msg.sender != lpModule) revert ErrorUnauthorized();
         ICCCToken(address(ccc)).withdrawFromPairAt(pair, to, amount);
     }
 
-    function buy(uint256 amountIn, uint256 amountOutMin, uint256 deadline) external payable nonReentrant {
-        require(false, "not open");
-        if (amountIn == 0) revert ErrorZeroAmount();
-        if (msg.value != amountIn) revert ErrorMsgValueMismatch();
-
-        Channel storage ch = _channel(wbnb);
-
-        uint256 cccBefore = ccc.balanceOf(address(this));
-        router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amountIn}(
-            amountOutMin,
-            ch.pathIn,
-            address(this),
-            deadline
-        );
-        uint256 cccOut = ccc.balanceOf(address(this)) - cccBefore;
-        if (cccOut == 0) revert ErrorZeroAmount();
-        if (cccOut < amountOutMin) revert ErrorSlippage();
-
-        uint256 usdtCost = _bnbToUsdt(amountIn);
-        _addUserBuyUSDT(msg.sender, usdtCost);
-
-        ccc.safeTransfer(msg.sender, cccOut);
-
-        userBuyBNBAmount[msg.sender] += amountIn;
-        userBuyCCCAmount[msg.sender] += cccOut;
-        userBuyQuoteAmount[wbnb][msg.sender] += amountIn;
-
-        emit Bought(msg.sender, amountIn, cccOut, usdtCost);
-        emit BoughtVia(wbnb, msg.sender, amountIn, cccOut, usdtCost);
-    }
 
     function sell(uint256 amountIn, uint256 amountOutMin, uint256 deadline) external nonReentrant {
         if (amountIn == 0) revert ErrorZeroAmount();
@@ -376,7 +408,9 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         uint256 bnbOut = address(this).balance - bnbBefore;
         if (bnbOut < amountOutMin) revert ErrorSlippage();
 
+        _accrueUserDailySell(msg.sender, wbnb, bnbOut);
         _accrueDailySell(wbnb, bnbOut);
+        _accrueUserDailySellCount(msg.sender);
 
         (bool ok, ) = msg.sender.call{value: bnbOut}("");
         require(ok, "bnb transfer failed");
@@ -388,6 +422,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         emit Sold(msg.sender, amountIn, bnbOut, landed);
         emit SoldVia(wbnb, msg.sender, amountIn, bnbOut, landed);
     }
+
 
     function sellForToken(
         address quoteToken,
@@ -423,7 +458,9 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         uint256 quoteOut = IERC20(quoteToken).balanceOf(address(this)) - quoteBefore;
         if (quoteOut < amountOutMin) revert ErrorSlippage();
 
+        _accrueUserDailySell(msg.sender, quoteToken, quoteOut);
         _accrueDailySell(quoteToken, quoteOut);
+        _accrueUserDailySellCount(msg.sender);
 
         IERC20(quoteToken).safeTransfer(msg.sender, quoteOut);
 
@@ -433,11 +470,38 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         emit SoldVia(quoteToken, msg.sender, amountIn, quoteOut, landed);
     }
 
-    function _accrueDailySell(address quoteToken, uint256 amount) internal {
-        uint256 today = UTCDateTime.today();
-        if (dailySoldAmount[today] + amount > dailySellLimit) revert ErrorDailySellLimitExceeded();
-        dailySoldAmount[today] += amount;
+
+    function _accrueUserDailySellCount(address user) internal {
+        uint256 limit = dailySellCountLimit;
+        if (limit == 0) return;
+        uint256 day = block.timestamp / 1 days;
+        require(userDailySellCount[user][day] < limit, "daily sell count exceeded");
+        userDailySellCount[user][day] = userDailySellCount[user][day] + 1;
     }
+
+
+    function _accrueUserDailySell(address user, address quoteToken, uint256 amount) internal {
+        uint256 limit = userDailySellLimit[quoteToken];
+        if (limit == 0) return;
+        uint256 day = block.timestamp / 1 days;
+        uint256 soldToday = userDailySoldAmount[user][quoteToken][day];
+        require(limit >= soldToday + amount, "user daily sell limit exceeded");
+        userDailySoldAmount[user][quoteToken][day] = soldToday + amount;
+    }
+
+
+    function _accrueDailySell(address quoteToken, uint256 amount) internal {
+        uint256 day = block.timestamp / 1 days;
+        uint256 soldToday = dailySoldAmount[quoteToken][day];
+        uint256 limit = dailySellLimit[quoteToken];
+
+        require(limit >= soldToday + amount, "daily sell limit exceeded");
+
+        uint256 total = soldToday + amount;
+        dailySoldAmount[quoteToken][day] = total;
+        emit DailySoldAccrued(quoteToken, day, amount, total);
+    }
+
 
     function _checkDailyPriceGuard(address pair) internal {
         uint256 price = _getPairPrice(pair, address(ccc), 1e18);
@@ -458,6 +522,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
             revert ErrorDailyPriceDropExceeded(pair, price, highestPrice);
         }
     }
+
 
     function _burnLandedCcc(address pair, uint256 pairCccBefore) internal returns (uint256 landed) {
         uint256 pairCccAfter = ccc.balanceOf(pair);
@@ -482,6 +547,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         emit UserBuyUSDTAdded(user, usdtAmount, userBuyUSDTAmount[user]);
     }
 
+
     function _applyProfitTax(address user, uint256 sellAmount) internal returns (uint256) {
         if (sellAmount == 0 || profitTaxBps == 0) {
             return sellAmount;
@@ -500,10 +566,12 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
             uint256 principalBnb = _usdtToBnb(buyUsdtAmount);
             uint256 recoverableBnb = _getAmountOut(sellAmount, reserveCCC, reserveBnb);
 
+
             if (recoverableBnb <= principalBnb) {
                 _reduceUserBuyUSDT(user, buyUsdtAmount, _bnbToUsdt(recoverableBnb));
                 return sellAmount;
             }
+
 
             uint256 userCanOutAmount = _getAmountIn(principalBnb, reserveCCC, reserveBnb);
             if (userCanOutAmount >= sellAmount) {
@@ -527,6 +595,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         return sellAmount - tax;
     }
 
+
     function _reduceUserBuyUSDT(address user, uint256 buyUsdtAmount, uint256 sellUsdt) private {
         if (buyUsdtAmount > sellUsdt) {
             userBuyUSDTAmount[user] = buyUsdtAmount - sellUsdt;
@@ -536,6 +605,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
             emit UserBuyUSDTReduced(user, buyUsdtAmount, 0);
         }
     }
+
 
     function _allotProfitTax(address user, uint256 profitCCC, uint256 tax) internal {
         if (tax == 0) return;
@@ -589,10 +659,12 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         }
     }
 
+
     function _bnbToUsdt(uint256 bnbAmount) internal view returns (uint256) {
         if (bnbAmount == 0) return 0;
         return _getPairPrice(bnbUsdtPool, wbnb, bnbAmount);
     }
+
 
     function _usdtToBnb(uint256 usdtAmount) internal view returns (uint256) {
         if (usdtAmount == 0) return 0;
@@ -640,6 +712,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         return numerator / denominator + 1;
     }
 
+
     function rescue(address token, address to, uint256 amount) external onlyAdmin {
         if (to == address(0)) revert ErrorZeroAddress();
         if (token == address(0)) {
@@ -653,6 +726,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     function channelCount() external view returns (uint256) {
         return channelList.length;
     }
+
 
     function dailySellQuota(address quoteToken)
         external
@@ -668,6 +742,39 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
             remainingToday = limit - soldToday;
         }
     }
+
+
+    function userDailySellCountQuota(address user)
+        external
+        view
+        returns (uint256 limit, uint256 countToday, uint256 remainingToday, uint256 day)
+    {
+        limit = dailySellCountLimit;
+        day = block.timestamp / 1 days;
+        countToday = userDailySellCount[user][day];
+        if (limit == 0 || countToday >= limit) {
+            remainingToday = 0;
+        } else {
+            remainingToday = limit - countToday;
+        }
+    }
+
+
+    function userDailySellQuota(address user, address quoteToken)
+        external
+        view
+        returns (uint256 limit, uint256 soldToday, uint256 remainingToday, uint256 day)
+    {
+        limit = userDailySellLimit[quoteToken];
+        day = block.timestamp / 1 days;
+        soldToday = userDailySoldAmount[user][quoteToken][day];
+        if (limit == 0 || soldToday >= limit) {
+            remainingToday = 0;
+        } else {
+            remainingToday = limit - soldToday;
+        }
+    }
+
 
     function getChannel(address quoteToken)
         external
@@ -685,9 +792,11 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         return (ch.enabled, ch.isNative, ch.route, ch.pair, ch.quoteUsdtPool, ch.quoteWbnbPool);
     }
 
+
     function quoteBuy(uint256 bnbIn) public view returns (uint256 cccOut, uint256 usdtCost) {
         return quoteBuyVia(wbnb, bnbIn);
     }
+
 
     function quoteBuyVia(address quoteToken, uint256 amountIn)
         public
@@ -703,9 +812,11 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         usdtCost = _bnbToUsdt(amountIn);
     }
 
+
     function buyEnabled() public view returns (bool) {
         return buyEnabledVia(wbnb);
     }
+
 
     function buyEnabledVia(address quoteToken) public view returns (bool) {
         if (quoteToken != wbnb) return false;
@@ -716,6 +827,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         if (ch.pair != token.mainPair()) return true;
         return token.isLpPoolAboveBuyThreshold();
     }
+
 
     function _previewCccBuyNet(uint256 amount) internal view returns (uint256) {
         if (amount == 0) return 0;
@@ -732,9 +844,11 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         return amount - feeAmount;
     }
 
+
     function quoteSell(uint256 cccIn) public view returns (uint256 bnbOut) {
         return quoteSellVia(wbnb, cccIn);
     }
+
 
     function quoteSellVia(address quoteToken, uint256 cccIn) public view returns (uint256 quoteOut) {
         if (cccIn == 0) return 0;
@@ -748,6 +862,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         return _getAmountOut(landed, reserveCCC, reserveQuote);
     }
 
+
     function previewSell(address user, uint256 amountIn)
         public
         view
@@ -755,6 +870,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
     {
         return previewSellVia(wbnb, user, amountIn);
     }
+
 
     function previewSellVia(address quoteToken, address user, uint256 amountIn)
         public
@@ -776,6 +892,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         quoteOut = _getAmountOut(sellAmount, reserveCCC, reserveQuote);
     }
 
+
     function _previewCccSellNet(uint256 amount, address pair) internal view returns (uint256) {
         if (amount == 0) return 0;
 
@@ -784,7 +901,7 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
             return amount;
         }
 
-        if (_willChargeAntiDump(token, pair)) {
+        if (token.willChargeAntiDump(pair, amount)) {
             uint256 dumpBps = token.ANTI_DUMP_BURN_BPS() + token.ANTI_DUMP_FEE_BPS();
             uint256 dumpTax = (amount * dumpBps) / BPS;
             return amount - dumpTax;
@@ -797,21 +914,6 @@ contract CCSwap is Initializable, AdminRoleUpgrade, ICCSwap {
         return amount - feeAmount;
     }
 
-    function _willChargeAntiDump(ICCCToken token, address pair) internal view returns (bool) {
-        (bool active, uint256 activatedAt, uint256 ref) = token.pairAntiDumpState(pair);
-
-        if (active) {
-
-            return block.timestamp < activatedAt + token.ANTI_DUMP_DURATION();
-        }
-
-        if (ref == 0) return false;
-        uint256 spot = token.getPairPriceInQuote(pair);
-        if (spot == 0) return false;
-
-        uint256 floor = (ref * (BPS - token.ANTI_DUMP_DROP_BPS())) / BPS;
-        return spot < floor;
-    }
 
     function _previewProfitTax(
         address user,

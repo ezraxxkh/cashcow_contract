@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -34,6 +35,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
     address public constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
     address public constant ROUTER_V2 = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
     address public constant BNB_USDT_POOL = 0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE;
+
 
     uint256 public constant BPS = 10000;
     uint256 public constant ANTI_DUMP_BURN_BPS = 2500;
@@ -131,6 +133,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         _registerPair(pair);
         mainPair = pair;
 
+
     }
 
     function pause() external onlyRole(GUARDIAN_ROLE) {
@@ -177,6 +180,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         lpPoolMaxUsdtValue = lpPoolMaxUsdtValue_;
     }
 
+
     function setFreeTradingEnabled(bool enabled) external onlyRole(GOVERNOR_ROLE) {
         freeTradingEnabled = enabled;
     }
@@ -211,6 +215,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         if (!isPair[pair]) revert ErrorPairNotRegistered();
         pairs[pair].enabled = enabled;
     }
+
 
     function setMainPair(address pair) external onlyRole(GOVERNOR_ROLE) {
         if (!isPair[pair]) revert ErrorPairNotRegistered();
@@ -277,6 +282,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         return (bnbPrice * bnbInUsdt) / 1e18;
     }
 
+
     function getMainPairSingleSideUsdtValue() public view returns (uint256) {
         uint256 reserveWbnb = _reserveQuote(mainPair, pairs[mainPair].cccIsToken0);
         uint256 bnbInUsdt = _getPairPrice(BNB_USDT_POOL, WBNB, 1e18);
@@ -288,7 +294,6 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
     }
 
     function isBurnAllowed() public view returns (bool) {
-
         return burnEnabled || getMainPairSingleSideUsdtValue() < lpPoolMaxUsdtValue;
     }
 
@@ -370,7 +375,47 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         }
     }
 
-    function _checkAntiDump(address pair, PairInfo storage info) internal {
+    function willChargeAntiDump(address pair, uint256 amount) public view returns (bool) {
+        if (!isPair[pair]) {
+            return false;
+        }
+
+        PairInfo storage info = pairs[pair];
+        if (info.antiDumpActive) {
+            return block.timestamp < uint256(info.antiDumpActivatedAt) + ANTI_DUMP_DURATION;
+        }
+
+        uint256 refPrice = info.referencePrice;
+        if (refPrice == 0) {
+            return false;
+        }
+
+        uint256 projectedPrice = _projectPostSellPrice(pair, amount);
+        if (projectedPrice == 0) {
+            return false;
+        }
+
+        uint256 floor = refPrice * (BPS - ANTI_DUMP_DROP_BPS) / BPS;
+        return projectedPrice <= floor;
+    }
+
+    function _projectPostSellPrice(
+        address pair,
+        uint256 amount
+    ) internal view returns (uint256) {
+        (uint256 reserveCCC, uint256 reserveQuote) = getPairReserves(pair);
+        if (reserveCCC == 0 || reserveQuote == 0) {
+            return 0;
+        }
+
+
+        uint256 projectedCCC = reserveCCC + amount;
+        uint256 quoteOut = (amount * reserveQuote) / projectedCCC;
+
+        return ((reserveQuote - quoteOut) * 1e18) / projectedCCC;
+    }
+
+    function _checkAntiDump(address pair, PairInfo storage info, uint256 amount) internal {
         if (info.antiDumpActive) {
             if (block.timestamp >= uint256(info.antiDumpActivatedAt) + ANTI_DUMP_DURATION) {
                 info.antiDumpActive = false;
@@ -378,19 +423,11 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
             }
             return;
         }
-        uint256 refPrice = info.referencePrice;
-        if (refPrice == 0) {
-            return;
-        }
-        uint256 spot = _getPairPrice(pair, address(this), 1e18);
-        if (spot == 0) {
-            return;
-        }
-        uint256 floor = refPrice * (BPS - ANTI_DUMP_DROP_BPS) / BPS;
-        if (spot < floor) {
+        if (willChargeAntiDump(pair, amount)) {
+            uint256 projectedPrice = _projectPostSellPrice(pair, amount);
             info.antiDumpActive = true;
             info.antiDumpActivatedAt = uint40(block.timestamp);
-            emit AntiDumpActivated(pair, spot, refPrice);
+            emit AntiDumpActivated(pair, projectedPrice, info.referencePrice);
         }
     }
 
@@ -417,6 +454,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         }
         return amount - burnAmount - feeAmount;
     }
+
 
     function _reserveQuote(address pair, bool cccIsToken0_) internal view returns (uint256) {
         (uint112 r0, uint112 r1, ) = IUniswapV2Pair(pair).getReserves();
@@ -501,6 +539,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
             }
         }
 
+
         address other = pair == from ? to : from;
         require(tradingWhitelist[other], "not trading whitelist");
 
@@ -522,7 +561,7 @@ contract CCCToken is ERC20, ERC20Permit, AccessControl, Pausable {
         }
 
         if (pair == to) {
-            _checkAntiDump(pair, info);
+            _checkAntiDump(pair, info, amount);
             uint256 sendAmount;
             if (info.antiDumpActive) {
                 sendAmount = _takeAntiDumpSellFee(pair, from, amount);

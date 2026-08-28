@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -9,6 +10,7 @@ import "./interfaces/IPancakeRouter02.sol";
 import "./interfaces/ITreasury.sol";
 import "./interfaces/ICCSwap.sol";
 
+
 contract CCLP is Initializable, AdminRoleUpgrade {
     using SafeERC20 for IERC20;
 
@@ -16,6 +18,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
     uint256 internal constant MAX_SWAP_SLIPPAGE_BPS = 500;
 
     address public constant DEAD_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
 
     address public ledger;
 
@@ -39,6 +42,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
 
     address public v2WbnbCcc;
 
+
     address public machine;
 
     address public lpRecipient;
@@ -54,6 +58,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
     error ErrorOnlyMachine();
     error ErrorSwapFailed();
     error ErrorCcSwapNotSet();
+
 
     event MinerLiquidityAdded(
         address indexed user,
@@ -98,6 +103,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
         ccSwap = ccSwap_;
     }
 
+
     function setExchangeRoutes(
         address wbnb_,
         address[] calldata usdtToBnb,
@@ -121,9 +127,11 @@ contract CCLP is Initializable, AdminRoleUpgrade {
         v2WbnbCcc = v2WbnbCcc_;
     }
 
+
     function setLpRecipient(address lpRecipient_) external onlyAdmin {
         lpRecipient = lpRecipient_;
     }
+
 
     function onMinerPurchase(address user, uint256 usdtAmount) external onlyMachine {
         if (usdtAmount == 0) revert ErrorZeroAmount();
@@ -132,15 +140,18 @@ contract CCLP is Initializable, AdminRoleUpgrade {
         }
         if (ccSwap == address(0)) revert ErrorCcSwapNotSet();
 
+
         ICCSwap(ccSwap).addUserBuyUSDT(user, usdtAmount);
 
         uint256 deadline = block.timestamp;
+
 
         paymentToken.forceApprove(address(router), usdtAmount);
         uint256 wbnbBefore = IERC20(wbnb).balanceOf(address(this));
         router.swapExactTokensForTokens(usdtAmount, 0, pathUsdtToBnb, address(this), deadline);
         uint256 wbnbGot = IERC20(wbnb).balanceOf(address(this)) - wbnbBefore;
         if (wbnbGot == 0) revert ErrorSwapFailed();
+
 
         uint256 wbnbForCcc = wbnbGot / 2;
         uint256 wbnbForLp = wbnbGot - wbnbForCcc;
@@ -152,6 +163,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
         router.swapExactTokensForTokens(wbnbForCcc, minCccOut, pathBnbToCcc, address(this), deadline);
         uint256 cccGot = ccc.balanceOf(address(this)) - cccBefore;
         if (cccGot == 0) revert ErrorSwapFailed();
+
 
         IERC20(wbnb).forceApprove(address(router), wbnbForLp);
         ccc.forceApprove(address(router), cccGot);
@@ -168,6 +180,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
 
         emit MinerLiquidityAdded(user, usdtAmount, amountWbnb, amountCcc, liquidity);
     }
+
 
     function exchange(address user, uint256 cashAmount)
         external
@@ -192,15 +205,18 @@ contract CCLP is Initializable, AdminRoleUpgrade {
         ICCSwap(ccSwap).withdrawFromPair(address(treasury), cccNet);
     }
 
+
     function exchangeFeeBps(address user) public view returns (uint256) {
         return _feeBpsForPrincipal(_activePrincipal(user));
     }
+
 
     function exchangeFeeRate(address user) external view returns (uint256 feeBps, uint8 tier) {
         uint256 principal = _activePrincipal(user);
         feeBps = _feeBpsForPrincipal(principal);
         tier = _tierForPrincipal(principal);
     }
+
 
     function previewCashToCCC(address user, uint256 amount)
         external
@@ -213,6 +229,7 @@ contract CCLP is Initializable, AdminRoleUpgrade {
         uint256 netCash = amount - feeAmount;
         cccAmount = quoteCashToCcc(netCash);
     }
+
 
     function quoteCashToCcc(uint256 cashAmount) public view returns (uint256) {
         if (cashAmount == 0) return 0;

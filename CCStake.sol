@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./AdminRoleUpgrade.sol";
 import "./libraries/UTCDateTime.sol";
 import "./interfaces/ILedger.sol";
+
 
 contract CCStake is Initializable, AdminRoleUpgrade {
     uint256 internal constant SECONDS_PER_DAY = 86400;
@@ -23,9 +25,11 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         uint8 slot;
     }
 
+
     address public machine;
 
     ILedger public ledger;
+
 
     mapping(address => uint256) public nextPositionId;
 
@@ -35,7 +39,9 @@ contract CCStake is Initializable, AdminRoleUpgrade {
 
     mapping(address => mapping(uint256 => uint256)) public activeIndex;
 
+
     mapping(address => uint256) public claimTime;
+
 
     mapping(address => uint256) public totalCashYield;
 
@@ -47,6 +53,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
     error ErrorAlreadySettled();
     error ErrorAlreadyClaimedToday();
 
+
     event PositionOpened(
         address indexed user,
         uint256 indexed posId,
@@ -57,6 +64,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         uint256 startDay,
         uint8 slot
     );
+
 
     event DailySettlement(
         address indexed user,
@@ -82,9 +90,11 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         ledger = ILedger(ledger_);
     }
 
+
     function yieldStartDay() external pure returns (uint256) {
         return YIELD_START_DAY;
     }
+
 
     function openPosition(
         address user,
@@ -108,6 +118,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         uint256 cccAtPurchase
     ) internal returns (uint256 id) {
         uint256 startDay = UTCDateTime.today();
+
 
         if (YIELD_START_DAY > startDay + SECONDS_PER_DAY) {
             startDay = YIELD_START_DAY - SECONDS_PER_DAY;
@@ -137,9 +148,11 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         emit PositionOpened(user, id, tier, principal, cycleDays, monthlyYield, startDay, slot);
     }
 
+
     function claim() external {
         address user = msg.sender;
         uint256 today = UTCDateTime.today();
+
 
         if (claimTime[user] == today) revert ErrorAlreadyClaimedToday();
 
@@ -177,9 +190,11 @@ contract CCStake is Initializable, AdminRoleUpgrade {
 
         claimTime[user] = today;
 
+
         if (totalReCash > 0 || totalCash > 0) {
             ledger.stake(user, totalReCash, totalCash);
         }
+
 
         for (uint256 j = 0; j < expiredCount; ) {
             uint256 id = expired[j];
@@ -199,6 +214,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         );
     }
 
+
     function settleMatured(address user, uint256 posId) external {
         Position storage pos = positionById[user][posId];
         if (!pos.active) revert ErrorAlreadySettled();
@@ -207,6 +223,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         pos.active = false;
         _removeActive(user, posId);
     }
+
 
     function releaseMatured(address user) public {
         uint256[] storage ids = activeIds[user];
@@ -236,9 +253,11 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         }
     }
 
+
     function activePrincipalSum(address user) external view returns (uint256) {
         return _activePrincipalSum(user);
     }
+
 
     function _activePrincipalSum(address user) internal view returns (uint256 sum) {
         uint256[] storage ids = activeIds[user];
@@ -253,6 +272,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
             }
         }
     }
+
 
     function activeCountByTier(address user, uint8 tier) external view returns (uint256 count) {
         uint256[] storage ids = activeIds[user];
@@ -269,6 +289,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
             }
         }
     }
+
 
     function slotStateByTier(address user, uint8 tier)
         external
@@ -294,6 +315,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         }
     }
 
+
     function maturedActiveCount(address user, uint8 tier) external view returns (uint256 count) {
         uint256[] storage ids = activeIds[user];
         uint256 len = ids.length;
@@ -310,17 +332,21 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         }
     }
 
+
     function _isFinished(Position storage pos) internal view returns (bool) {
         return pos.claimedDays >= pos.cycleDays;
     }
+
 
     function _shouldRelease(Position storage pos) internal view returns (bool) {
         return _isFinished(pos);
     }
 
+
     function _occupiesShare(Position storage pos) internal view returns (bool) {
         return !_isFinished(pos);
     }
+
 
     function _removeActive(address user, uint256 id) internal {
         uint256 idxPlus = activeIndex[user][id];
@@ -337,9 +363,11 @@ contract CCStake is Initializable, AdminRoleUpgrade {
         activeIndex[user][id] = 0;
     }
 
+
     function activeLength(address user) external view returns (uint256) {
         return activeIds[user].length;
     }
+
 
     function getActivePositions(address user) external view returns (Position[] memory list) {
         uint256[] storage ids = activeIds[user];
@@ -352,6 +380,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
             }
         }
     }
+
 
     function pendingClaim(address user)
         external
@@ -374,6 +403,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
                 cashAmount += pos.monthlyYield / pos.cycleDays;
             }
 
+
             if (pos.claimedDays < pos.cycleDays) {
                 uint256 remaining = uint256(pos.cycleDays) - uint256(pos.claimedDays);
                 pendingReCashAmount += (pos.principal / pos.cycleDays) * remaining;
@@ -386,6 +416,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
 
         claimable = (claimTime[user] != today) && (reCashAmount > 0 || cashAmount > 0);
     }
+
 
     function pendingClaimTomorrow(address user)
         external
@@ -400,6 +431,7 @@ contract CCStake is Initializable, AdminRoleUpgrade {
             Position storage pos = positionById[user][ids[i]];
             uint256 claimedDays = pos.claimedDays;
             uint256 lastClaimDay = pos.lastClaimDay;
+
 
             if (today > lastClaimDay && claimedDays < pos.cycleDays) {
                 unchecked {

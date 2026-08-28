@@ -1,4 +1,6 @@
+
 pragma solidity ^0.8.0;
+
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -6,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeMathUpgradeable.sol";
 import "./AdminRoleUpgrade.sol";
+
 
 contract CCRelation is AdminRoleUpgrade, Initializable {
     event Bind(address parent, address child, uint256 level);
@@ -21,12 +24,14 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
 
     mapping(address => uint256) public level;
 
+
     function initialize() public initializer {
 
         _addAdmin(0x7923ba113c5a45908Ad16410C6faaC365cB749ee);
         invStats[0x0000000000000000000000000000000000000001] = true;
         level[0x0000000000000000000000000000000000000001] = 1;
     }
+
 
     function replaceBind(address oldAddr, address newAddr) external onlyAdmin {
 
@@ -36,8 +41,10 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
 
         require(!invStats[newAddr], "REPLACE: NEW ALREADY BINDED");
 
+
         address parent = Inviter[oldAddr];
         require(parent != address(0), "REPLACE: OLD NO PARENT");
+
 
         address[] storage parentChildren = invList[parent];
         bool replaced = false;
@@ -50,9 +57,11 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         }
         require(replaced, "REPLACE: OLD NOT FOUND IN PARENT");
 
+
         Inviter[newAddr] = parent;
         invStats[newAddr] = true;
         level[newAddr] = level[oldAddr];
+
 
         address[] storage children = invList[oldAddr];
         for (uint256 i = 0; i < children.length; i++) {
@@ -64,6 +73,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         }
 
         delete invList[oldAddr];
+
 
         invStats[oldAddr] = false;
         Inviter[oldAddr] = address(0);
@@ -79,7 +89,9 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         require(invStats[inv], "BIND ERROR: INVITER NOT BIND YET");
         _bind(msg.sender, inv);
 
+
     }
+
 
     function mintBind(address child, address parent)
     external onlyAdmin
@@ -89,6 +101,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
 
         _bind(child, parent);
     }
+
 
     function _bind(address child, address parent)
     internal
@@ -102,8 +115,10 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
             level[child] = level[parent].add(1);
         }
 
+
         emit Bind(parent, child, level[child]);
     }
+
 
     function BatchBind(address[] memory childs, address[] memory parents)
         external
@@ -119,6 +134,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         }
     }
 
+
     function invListLength(address addr_) public view returns (uint256) {
         return invList[addr_].length;
     }
@@ -133,6 +149,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
             _addrsList[i] = invList[addr_][i];
         }
     }
+
 
     function batchBindByParent(address parent, address[] memory addrs) external onlyAdmin{
         require(invStats[parent], "BIND ERROR: INVITER NOT BIND YET");
@@ -154,6 +171,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         return bindstatus;
     }
 
+
     function batchBindWithParentAndChild(address[] memory childs, address[] memory parents) external onlyAdmin{
         for (uint256 index = 0; index < childs.length; index++) {
             if(!invStats[childs[index]]){
@@ -162,6 +180,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         }
     }
 
+
     function rebindRelation(address child, address newParent) external onlyAdmin {
         require(invStats[child], "REBIND: child not bound");
         require(invStats[newParent], "REBIND: newParent not bound");
@@ -169,6 +188,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
 
         address oldParent = Inviter[child];
         require(oldParent != address(0), "REBIND: oldParent not found");
+
 
         address[] storage oldChildren = invList[oldParent];
         bool found = false;
@@ -182,15 +202,20 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         }
         require(found, "REBIND: child not found in oldParent's list");
 
+
         Inviter[child] = newParent;
         invList[newParent].push(child);
+
 
         uint256 oldLevel = level[child];
         uint256 newLevel = level[newParent].add(1);
 
+
         _updateLevelsRecursively(child, oldLevel, newLevel);
 
+
     }
+
 
     function _updateLevelsRecursively(address user, uint256 oldL, uint256 newL) internal {
         level[user] = newL;
@@ -199,6 +224,7 @@ contract CCRelation is AdminRoleUpgrade, Initializable {
         for (uint256 i = 0; i < children.length; i++) {
             address targetChild = children[i];
             uint256 childOldLevel = level[targetChild];
+
 
             uint256 childNewLevel;
             if (newL > oldL) {

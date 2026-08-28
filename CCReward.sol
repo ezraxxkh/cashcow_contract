@@ -1,4 +1,6 @@
+
 pragma solidity ^0.8.0;
+
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -10,6 +12,7 @@ import "./AdminRoleUpgrade.sol";
 import "./CCLedger.sol";
 import "./interfaces/ITreasury.sol";
 import "./interfaces/ICCAllowed.sol";
+
 
 contract CCReward is AdminRoleUpgrade, Initializable {
     using SafeMathUpgradeable for uint256;
@@ -26,17 +29,20 @@ contract CCReward is AdminRoleUpgrade, Initializable {
 
     mapping(address => uint256) public nodeProfitAmount;
 
+
     mapping(address => uint256) public builderTradeAmount;
 
     mapping(address => uint256) public builderProfitAmount;
 
     mapping(address => uint256) public builderMarketRewardAmount;
 
+
     mapping(address => uint256) public communityExchangeFeeAmount;
 
     mapping(address => uint256) public communityTradeAmount;
 
     mapping(address => uint256) public communityProfitAmount;
+
 
     mapping(address => uint256) public directRewardAmount;
 
@@ -61,10 +67,12 @@ contract CCReward is AdminRoleUpgrade, Initializable {
     );
     event ClaimDirectReward(address indexed user, uint256 reduceDirectRewardAmount);
 
+
     function initialize() public initializer {
 
         _addAdmin(0x7923ba113c5a45908Ad16410C6faaC365cB749ee);
     }
+
 
     function setAbountAddress(address _ccc, address _ledger, address _treasury) external onlyAdmin {
         ccc = _ccc;
@@ -73,17 +81,21 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         treasury = ITreasury(_treasury);
     }
 
+
     function setAllowed(address _allowed) external onlyAdmin {
         allowed = ICCAllowed(_allowed);
     }
+
 
     function setRewardSigner(address _rewardSigner) external onlyAdmin {
         rewardSigner = _rewardSigner;
     }
 
+
     function _checkNotLimited(address user) internal view {
         if (address(allowed) != address(0) && allowed.isLimited(user)) revert ErrorLimited();
     }
+
 
     function claimNodeReward(uint256 _tradeAmount, uint256 _profitAmount, uint256 signedBlock, bytes calldata signature) external {
         _checkNotLimited(msg.sender);
@@ -104,6 +116,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         emit ClaimNodeReward(msg.sender, reduceTradeAmount, reduceProfitAmount);
     }
 
+
     function _verifyNodeSignature(address user, uint256 _tradeAmount, uint256 _profitAmount, uint256 signedBlock, bytes calldata signature) internal {
 
         require(rewardSigner != address(0), "signer unset");
@@ -113,6 +126,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         require(_verifyNodeSig(user, _tradeAmount, _profitAmount, signedBlock, signature) == rewardSigner, "bad signature");
         nonce[user] = nonce[user].add(1);
     }
+
 
     function _verifyNodeSig(
         address user, uint256 _tradeAmount, uint256 _profitAmount, uint256 signedBlock, bytes calldata signature
@@ -124,6 +138,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         return (messageHash.toEthSignedMessageHash().recover(signature));
 
     }
+
 
     function claimBuilderReward(
         uint256 _tradeAmount,
@@ -156,6 +171,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         emit ClaimBuilderReward(msg.sender, reduceTradeAmount, reduceProfitAmount, reduceMarketRewardAmount);
     }
 
+
     function claimCommunityReward(
         uint256 _exchangeFeeAmount,
         uint256 _tradeAmount,
@@ -187,6 +203,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         emit ClaimCommunityReward(msg.sender, reduceExchangeFeeAmount, reduceTradeAmount, reduceProfitAmount);
     }
 
+
     function claimDirectReward(
         uint256 _directRewardAmount,
         uint256 signedBlock,
@@ -202,9 +219,11 @@ contract CCReward is AdminRoleUpgrade, Initializable {
 
         directRewardAmount[msg.sender] = _directRewardAmount;
 
+
         ledger.addCash(msg.sender, reduceDirectRewardAmount, 5, address(this));
         emit ClaimDirectReward(msg.sender, reduceDirectRewardAmount);
     }
+
 
     function _verifyBuilderSignature(
         address user,
@@ -224,6 +243,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         );
         nonce[user] = nonce[user].add(1);
     }
+
 
     function _verifyBuilderSig(
         address user,
@@ -247,6 +267,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         return (messageHash.toEthSignedMessageHash().recover(signature));
     }
 
+
     function _verifyCommunitySignature(
         address user,
         uint256 _exchangeFeeAmount,
@@ -265,6 +286,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         );
         nonce[user] = nonce[user].add(1);
     }
+
 
     function _verifyCommunitySig(
         address user,
@@ -288,6 +310,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         return (messageHash.toEthSignedMessageHash().recover(signature));
     }
 
+
     function _verifyDirectSignature(
         address user,
         uint256 _directRewardAmount,
@@ -301,6 +324,7 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         require(_verifyDirectSig(user, _directRewardAmount, signedBlock, signature) == rewardSigner, "bad signature");
         nonce[user] = nonce[user].add(1);
     }
+
 
     function _verifyDirectSig(
         address user,
@@ -320,26 +344,32 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         return (messageHash.toEthSignedMessageHash().recover(signature));
     }
 
+
     function getUserNodeReward(address user) public view returns(uint256, uint256) {
         return (nodeTradeAmount[user], nodeProfitAmount[user]);
     }
+
 
     function getUserBuilderReward(address user) public view returns(uint256, uint256, uint256) {
         return (builderTradeAmount[user], builderProfitAmount[user], builderMarketRewardAmount[user]);
     }
 
+
     function getUserCommunityReward(address user) public view returns(uint256, uint256, uint256) {
         return (communityExchangeFeeAmount[user], communityTradeAmount[user], communityProfitAmount[user]);
     }
+
 
     function getUserDirectReward(address user) public view returns(uint256) {
         return directRewardAmount[user];
     }
 
+
     function setUserNodeReward(address user, uint256 _tradeAmount, uint256 _profitAmount) external onlyAdmin {
         nodeTradeAmount[user] = _tradeAmount;
         nodeProfitAmount[user] = _profitAmount;
     }
+
 
     function setUserBuilderReward(address user, uint256 _tradeAmount, uint256 _profitAmount, uint256 _marketRewardAmount) external onlyAdmin {
         builderTradeAmount[user] = _tradeAmount;
@@ -347,11 +377,13 @@ contract CCReward is AdminRoleUpgrade, Initializable {
         builderMarketRewardAmount[user] = _marketRewardAmount;
     }
 
+
     function setUserCommunityReward(address user, uint256 _exchangeFeeAmount, uint256 _tradeAmount, uint256 _profitAmount) external onlyAdmin {
         communityExchangeFeeAmount[user] = _exchangeFeeAmount;
         communityTradeAmount[user] = _tradeAmount;
         communityProfitAmount[user] = _profitAmount;
     }
+
 
     function setUserDirectReward(address user, uint256 _directRewardAmount) external onlyAdmin {
         directRewardAmount[user] = _directRewardAmount;

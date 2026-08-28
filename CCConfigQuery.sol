@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -7,6 +8,7 @@ interface ICCLP {
     function exchangeFeeBps(address user) external view returns (uint256);
     function exchangeFeeRate(address user) external view returns (uint256 feeBps, uint8 tier);
 }
+
 
 contract CCConfigQuery is Initializable, AdminRoleUpgrade {
 
@@ -20,9 +22,11 @@ contract CCConfigQuery is Initializable, AdminRoleUpgrade {
         lp = ICCLP(lp_);
     }
 
+
     function exchangeFeeBps(address user) external view returns (uint256) {
         return lp.exchangeFeeBps(user);
     }
+
 
     function exchangeFeeRate(address user) external view returns (uint256 feeBps, uint8 tier) {
         return lp.exchangeFeeRate(user);
