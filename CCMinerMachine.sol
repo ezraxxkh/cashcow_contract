@@ -9,12 +9,11 @@ import "./interfaces/IStake.sol";
 import "./interfaces/ILedger.sol";
 import "./interfaces/IRelation.sol";
 import "./interfaces/ICCLP.sol";
+import "./interfaces/ICCSwap.sol";
 import "./interfaces/IEarlyBird.sol";
-
 
 contract CCMinerMachine is Initializable, AdminRoleUpgrade {
     using SafeERC20 for IERC20;
-
 
     enum Tier {
         C1,
@@ -25,7 +24,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         C6
     }
 
-
     struct TierConfig {
         uint256 price;
         uint16 monthlyRateBps;
@@ -33,7 +31,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         uint16 maxShares;
         bool enabled;
     }
-
 
     struct SlotView {
         uint8 slot;
@@ -44,37 +41,19 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
 
     uint16 internal constant INITIAL_CYCLE_DAYS = 30;
     uint16 internal constant CAP_CYCLE_DAYS = 90;
-
     uint256 internal constant PUBLIC_SALE_START_TIME = 1787749200;
-
-
     IERC20 public paymentToken;
-
     address public treasury;
-
     IStake public stake;
-
     ILedger public ledger;
-
-
     mapping(Tier => TierConfig) public tiers;
-
     mapping(address => mapping(Tier => uint256)) public purchasedCount;
-
-
     IRelation public relation;
-
-
     ICCLP public lp;
-
-
     mapping(address => bool) public isSpender;
-
-
     mapping(address => mapping(Tier => mapping(uint256 => uint256))) public slotRounds;
-
-
     IEarlyBird public earlyBird;
+    ICCSwap public ccSwap;
 
     error ErrorTierDisabled();
     error ErrorNoFreeShare();
@@ -84,7 +63,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
     error ErrorUnauthorized();
     error ErrorInvalidCount();
     error ErrorPublicSaleNotStarted();
-
 
     event MinerPurchased(
         address indexed buyer,
@@ -118,12 +96,9 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
 
     function initialize() public initializer {
         _addAdmin(0x7923ba113c5a45908Ad16410C6faaC365cB749ee);
-
-
         tiers[Tier.C1] = TierConfig(100e18, 2000, 1, 8, true);
         tiers[Tier.C2] = TierConfig(500e18, 2200, 2, 6, true);
         tiers[Tier.C3] = TierConfig(1000e18, 2400, 3, 4, true);
-
         tiers[Tier.C4] = TierConfig(5000e18, 2600, 4, 2, false);
         tiers[Tier.C5] = TierConfig(10000e18, 2800, 5, 1, false);
         tiers[Tier.C6] = TierConfig(50000e18, 3000, 6, 1, false);
@@ -147,17 +122,18 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         earlyBird = IEarlyBird(earlyBird_);
     }
 
-
     function setTierEnabled(Tier tier, bool enabled) external onlyAdminOrSpender {
         tiers[tier].enabled = enabled;
     }
-
 
     function setSpender(address account, bool status) external onlyAdmin {
         isSpender[account] = status;
         emit SpenderUpdated(account, status);
     }
 
+    function setCcSwap(address ccSwap_) external onlyAdmin {
+        ccSwap = ICCSwap(ccSwap_);
+    }
 
     function canBuyNow(address user) public view returns (bool) {
         if (block.timestamp >= PUBLIC_SALE_START_TIME) {
@@ -166,11 +142,9 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         return address(earlyBird) != address(0) && earlyBird.getTotalPurchasedAmount(user) > 0;
     }
 
-
     function publicSaleStartTime() external pure returns (uint256) {
         return PUBLIC_SALE_START_TIME;
     }
-
 
     function cycleForRound(Tier tier, uint256 round) public view returns (uint16) {
         uint16 add = tiers[tier].addDays;
@@ -178,16 +152,13 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         if (linear <= CAP_CYCLE_DAYS) {
             return uint16(linear);
         }
-
         uint256 rCap = uint256(CAP_CYCLE_DAYS - INITIAL_CYCLE_DAYS) / uint256(add);
         uint256 k = round - rCap;
-
         if (k > 9) {
             k = 9;
         }
         return uint16(uint256(CAP_CYCLE_DAYS) << k);
     }
-
 
     function buyBatch(Tier tier, uint256 count, uint256 useReCash, uint256 useCash) external {
         _buyBatch(msg.sender, tier, count, useReCash, useCash);
@@ -195,36 +166,25 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
 
     function _buyBatch(address buyer, Tier tier, uint256 count, uint256 useReCash, uint256 useCash) internal {
         if (count == 0) revert ErrorInvalidCount();
-
         if (!canBuyNow(buyer)) revert ErrorPublicSaleNotStarted();
         if (relation.Inviter(buyer) == address(0)) revert ErrorNotBound();
-
-
         TierConfig memory config = tiers[tier];
         if (!config.enabled) revert ErrorTierDisabled();
-
         (uint256 mask, uint256 legacyCount) = stake.slotStateByTier(buyer, uint8(tier));
         if (_popcount(mask) + legacyCount + count > config.maxShares) revert ErrorNoFreeShare();
-
         uint256 totalPrice = config.price * count;
         if (useReCash + useCash > totalPrice) revert ErrorPaymentExceedsPrice();
-
         uint256 purchased = purchasedCount[buyer][tier];
         uint256 monthlyYield = (config.price * config.monthlyRateBps) / 10000;
-
         uint256 cccAtPurchase = address(lp) == address(0) ? 0 : lp.quoteCashToCcc(monthlyYield);
-
-
         if (useReCash > 0 || useCash > 0) {
             ledger.spend(buyer, useReCash, useCash);
         }
         uint256 totalUseU = totalPrice - useReCash - useCash;
         if (totalUseU > 0) {
-
             paymentToken.safeTransferFrom(buyer, address(lp), totalUseU);
             lp.onMinerPurchase(buyer, totalUseU);
         }
-
         uint256[] memory rounds = _loadRounds(buyer, tier, config.maxShares);
         uint256 remRe = useReCash;
         uint256 remCash = useCash;
@@ -233,18 +193,15 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
             uint16 cycleDays = cycleForRound(tier, round);
             rounds[slot] = uint256(round) + 1;
             mask |= (uint256(1) << slot);
-
             unchecked {
                 purchased += 1;
             }
-
             uint256 re = remRe > config.price ? config.price : remRe;
             remRe -= re;
             uint256 roomForCash = config.price - re;
             uint256 cash = remCash > roomForCash ? roomForCash : remCash;
             remCash -= cash;
             uint256 useU = config.price - re - cash;
-
             stake.openPosition(
                 buyer,
                 uint8(tier),
@@ -254,7 +211,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
                 monthlyYield,
                 cccAtPurchase
             );
-
             emit MinerPurchased(
                 buyer,
                 tier,
@@ -273,7 +229,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
                 slot,
                 round
             );
-
             unchecked {
                 ++i;
             }
@@ -281,7 +236,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         purchasedCount[buyer][tier] = purchased;
         _saveRounds(buyer, tier, rounds);
     }
-
 
     function buyByAdmin(
         address[] calldata accounts,
@@ -300,24 +254,17 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
 
     function _buyByAdmin(address account, Tier tier, bool hasPerformance) internal {
         if (relation.Inviter(account) == address(0)) revert ErrorNotBound();
-
-
         TierConfig memory config = tiers[tier];
         if (!config.enabled) revert ErrorTierDisabled();
-
         (uint256 mask, uint256 legacyCount) = stake.slotStateByTier(account, uint8(tier));
         if (_popcount(mask) + legacyCount >= config.maxShares) revert ErrorNoFreeShare();
-
         uint256[] memory rounds = _loadRounds(account, tier, config.maxShares);
         (uint8 slot, uint8 round) = _pickSlot(rounds, mask, config.maxShares);
         uint16 cycleDays = cycleForRound(tier, round);
         rounds[slot] = uint256(round) + 1;
-
         uint256 monthlyYield = (config.price * config.monthlyRateBps) / 10000;
         uint256 purchaseIndex = purchasedCount[account][tier] + 1;
         uint256 cccAtPurchase = address(lp) == address(0) ? 0 : lp.quoteCashToCcc(monthlyYield);
-
-
         purchasedCount[account][tier] = purchaseIndex;
         _saveRounds(account, tier, rounds);
         stake.openPosition(
@@ -329,7 +276,7 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
             monthlyYield,
             cccAtPurchase
         );
-
+        ccSwap.addUserBuyUSDT(account, config.price);
         emit MinerPurchased(
             account,
             tier,
@@ -349,7 +296,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
             round
         );
     }
-
 
     function _pickSlot(uint256[] memory rounds, uint256 occupiedMask, uint256 maxShares)
         internal
@@ -407,11 +353,9 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
         }
     }
 
-
     function getTier(Tier tier) external view returns (TierConfig memory info) {
         return tiers[tier];
     }
-
 
     function getTiers() external view returns (TierConfig[] memory list) {
         list = new TierConfig[](6);
@@ -422,7 +366,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
             }
         }
     }
-
 
     function getSlots(address user, Tier tier) external view returns (SlotView[] memory list) {
         TierConfig memory config = tiers[tier];
@@ -441,7 +384,6 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
             }
         }
     }
-
 
     function getUserTier(address user, Tier tier)
         external
@@ -468,4 +410,5 @@ contract CCMinerMachine is Initializable, AdminRoleUpgrade {
             nextCycleDays = cycleForRound(tier, round);
         }
     }
+
 }
